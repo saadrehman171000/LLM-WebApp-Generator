@@ -17,60 +17,28 @@ export async function generateFullStackCode(prompt: string): Promise<GenerationR
   }
 
   try {
-    // Enhanced prompt for full-stack Next.js generation
-    const enhancedPrompt = `
-CRITICAL INSTRUCTIONS: Generate a COMPLETE, PRODUCTION-READY full-stack Next.js 14 application that EXACTLY matches the user's request.
+    // Step 1: Generate core configuration and setup files
+    const setupPrompt = `
+Generate the core configuration and setup files for a complete Next.js 14 application based on this request: "${prompt}"
 
-USER REQUEST: ${prompt}
+Generate ONLY these files:
+1. package.json - with all necessary dependencies
+2. next.config.js - Next.js configuration
+3. tsconfig.json - TypeScript configuration
+4. tailwind.config.js - TailwindCSS configuration
+5. app/globals.css - Complete CSS setup with variables
+6. lib/utils.ts - Utility functions
+7. lib/types.ts - TypeScript type definitions
+8. prisma/schema.prisma - Database schema (if database is needed)
+9. lib/prisma.ts - Database client (if database is needed)
+10. README.md - Setup instructions and documentation
+11. .env.example - Environment variables template
 
-REQUIREMENTS:
-- Create a COMPLETE, WORKING application that does EXACTLY what the user asked for
-- Do NOT create generic templates or placeholder content
-- Implement ALL the functionality described in the user's request
-- Make it production-ready and fully functional
-- Include proper error handling, loading states, and user interactions
-- Use modern React patterns and hooks
-- Implement responsive design
-- Add proper TypeScript types
-
-Technical specifications:
-- Single Next.js 14 project with App Router
-- TypeScript for type safety
-- TailwindCSS for styling
-- Frontend pages and components in app/ directory
-- API routes in app/api/ directory for backend functionality
-- Responsive design (mobile-first)
-- Modern UI components with proper styling
-- Proper error handling and loading states
-- Server Actions for form handling
-- Database integration (if needed)
-- Authentication (if needed)
-- Accessibility best practices
-
-FILE STRUCTURE REQUIREMENTS:
-You MUST generate ALL of these files with complete, working code:
-
-1. app/page.tsx - Main application page with the core functionality
-2. app/layout.tsx - Root layout with proper metadata and structure
-3. app/globals.css - Complete TailwindCSS setup with custom variables
-4. package.json - All necessary dependencies with correct versions
-5. tailwind.config.js - Complete TailwindCSS configuration
-6. tsconfig.json - TypeScript configuration
-7. next.config.js - Next.js configuration
-8. app/api/*/route.ts - API endpoints for the requested functionality
-9. components/*.tsx - Reusable components (Header, Footer, etc.)
-10. lib/*.ts - Utility functions and configurations
-
-CRITICAL: The application MUST implement the exact functionality requested by the user. If they ask for a todo app, create a todo app with add/delete/complete functionality. If they ask for a blog, create a blog with posts/comments. If they ask for an e-commerce site, create an e-commerce site with products/cart/checkout. Do NOT create generic templates.
-
-IMPORTANT: Generate each file with its proper path (e.g., app/page.tsx, app/layout.tsx, etc.) NOT as src/generated-X.tsx. Use the file="path" syntax for each code block.
-
-Generate a complete, production-ready full-stack Next.js application with both frontend pages/components AND API routes in a single project structure.
-
-Please provide each file in a separate code block with the file path specified using file="path" syntax.
+Use file="path" syntax for each code block. Make sure all files are complete and production-ready.
     `.trim()
 
-    const response = await fetch(V0_API_URL, {
+    console.log("Step 1: Generating setup files...")
+    const setupResponse = await fetch(V0_API_URL, {
       method: "POST",
       headers: {
         Authorization: `Bearer ${V0_API_KEY}`,
@@ -78,42 +46,147 @@ Please provide each file in a separate code block with the file path specified u
       },
       body: JSON.stringify({
         model: "v0-1.5-md",
-        messages: [
-          {
-            role: "user",
-            content: enhancedPrompt,
-          },
-        ],
+        messages: [{ role: "user", content: setupPrompt }],
       }),
     })
 
-    if (!response.ok) {
-      const errorText = await response.text()
-      throw new Error(`V0 API error: ${response.status} - ${errorText}`)
+    if (!setupResponse.ok) {
+      const errorText = await setupResponse.text()
+      throw new Error(`V0 API error: ${setupResponse.status} - ${errorText}`)
     }
 
-    const data = await response.json()
+    const setupData = await setupResponse.json()
+    const setupFiles = parseV0Response(setupData)
+    console.log("Setup files generated:", setupFiles.map(f => f.path))
 
-    // Debug: Log the V0 API response
-    console.log("V0 API Response:", JSON.stringify(data, null, 2))
+    // Step 2: Generate main application pages
+    const pagesPrompt = `
+Based on this request: "${prompt}", generate the main application pages.
 
-    // Parse the response and extract files
-    const v0Files = parseV0Response(data)
-    
-    console.log("Parsed V0 files:", v0Files.map(f => f.path))
-    
+Generate ONLY these files:
+1. app/layout.tsx - Root layout with proper metadata and navigation
+2. app/page.tsx - Main page with the core functionality
+3. app/tasks/new/page.tsx - Create new task page
+4. app/tasks/[id]/page.tsx - View task details page
+5. app/tasks/[id]/edit/page.tsx - Edit task page
+
+Make sure each page is complete, functional, and implements the exact functionality requested. Include proper error handling, loading states, and responsive design.
+
+Use file="path" syntax for each code block.
+    `.trim()
+
+    console.log("Step 2: Generating main pages...")
+    const pagesResponse = await fetch(V0_API_URL, {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${V0_API_KEY}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        model: "v0-1.5-md",
+        messages: [{ role: "user", content: pagesPrompt }],
+      }),
+    })
+
+    if (!pagesResponse.ok) {
+      const errorText = await pagesResponse.text()
+      throw new Error(`V0 API error: ${pagesResponse.status} - ${errorText}`)
+    }
+
+    const pagesData = await pagesResponse.json()
+    const pagesFiles = parseV0Response(pagesData)
+    console.log("Pages generated:", pagesFiles.map(f => f.path))
+
+    // Step 3: Generate API routes
+    const apiPrompt = `
+Based on this request: "${prompt}", generate the API routes needed for the application.
+
+Generate ONLY these files:
+1. app/api/route.ts - Main API endpoint (if needed)
+2. Any specific API routes needed (e.g., app/api/tasks/route.ts, app/api/tasks/[id]/route.ts, etc.)
+
+Make sure each API route is complete, handles all HTTP methods (GET, POST, PUT, DELETE), includes proper error handling, validation, and database operations if needed.
+
+Use file="path" syntax for each code block.
+    `.trim()
+
+    console.log("Step 3: Generating API routes...")
+    const apiResponse = await fetch(V0_API_URL, {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${V0_API_KEY}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        model: "v0-1.5-md",
+        messages: [{ role: "user", content: apiPrompt }],
+      }),
+    })
+
+    if (!apiResponse.ok) {
+      const errorText = await apiResponse.text()
+      throw new Error(`V0 API error: ${apiResponse.status} - ${errorText}`)
+    }
+
+    const apiData = await apiResponse.json()
+    const apiFiles = parseV0Response(apiData)
+    console.log("API routes generated:", apiFiles.map(f => f.path))
+
+    // Step 4: Generate components
+    const componentsPrompt = `
+Based on this request: "${prompt}", generate the reusable components needed for the application.
+
+Generate ONLY these files:
+1. components/Header.tsx - Navigation header
+2. components/Footer.tsx - Footer component
+3. components/TaskCard.tsx - Display individual task
+4. components/TaskForm.tsx - Form for creating/editing tasks
+5. components/TaskList.tsx - List of tasks
+6. components/ui/Button.tsx - Reusable button component
+7. components/ui/Input.tsx - Reusable input component
+8. components/ui/Select.tsx - Reusable select component
+
+Make sure each component is complete, reusable, and follows React best practices. Include proper TypeScript types, error handling, and responsive design.
+
+Use file="path" syntax for each code block.
+    `.trim()
+
+    console.log("Step 4: Generating components...")
+    const componentsResponse = await fetch(V0_API_URL, {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${V0_API_KEY}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        model: "v0-1.5-md",
+        messages: [{ role: "user", content: componentsPrompt }],
+      }),
+    })
+
+    if (!componentsResponse.ok) {
+      const errorText = await componentsResponse.text()
+      throw new Error(`V0 API error: ${componentsResponse.status} - ${errorText}`)
+    }
+
+    const componentsData = await componentsResponse.json()
+    const componentsFiles = parseV0Response(componentsData)
+    console.log("Components generated:", componentsFiles.map(f => f.path))
+
+    // Combine all files
+    const allV0Files = [...setupFiles, ...pagesFiles, ...apiFiles, ...componentsFiles]
+    console.log("Total V0 files generated:", allV0Files.map(f => f.path))
+
     // Get fallback files to ensure complete project structure
     const fallbackResult = generateFallbackFullStack(prompt)
     const fallbackFiles = fallbackResult.files
-
-    console.log("Fallback files:", fallbackFiles.map(f => f.path))
 
     // Merge V0 files with fallback files, prioritizing V0 files
     const mergedFiles: CodeFile[] = []
     const processedPaths = new Set<string>()
 
     // Add V0 files first
-    v0Files.forEach(file => {
+    allV0Files.forEach(file => {
       // Rename generated files to proper paths
       let finalPath = file.path
       if (file.path.startsWith('src/generated-')) {
@@ -146,7 +219,7 @@ Please provide each file in a separate code block with the file path specified u
     })
 
     // Check for missing imports and create placeholder files
-    const missingFiles = findMissingImports(v0Files, processedPaths)
+    const missingFiles = findMissingImports(allV0Files, processedPaths)
     missingFiles.forEach(file => {
       mergedFiles.push(file)
       processedPaths.add(file.path)
@@ -191,7 +264,7 @@ Please provide each file in a separate code block with the file path specified u
 
     return {
       files: mergedFiles,
-      preview: data.choices?.[0]?.message?.content || null,
+      preview: "Complete application generated successfully!",
     }
   } catch (error) {
     console.error("Full-stack generation error:", error)
