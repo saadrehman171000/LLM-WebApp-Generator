@@ -23,8 +23,33 @@ Generate the core configuration and setup files for a complete Next.js 14 applic
 
 IMPORTANT: Use SQLite3 as the database (not PostgreSQL) for easy setup. The database file should be created automatically.
 
+CRITICAL: For package.json, use ONLY these reliable dependencies:
+- next: "14.0.4"
+- react: "18.2.0"
+- react-dom: "18.2.0"
+- @prisma/client: "^5.7.1"
+- clsx: "^2.0.0"
+- tailwind-merge: "^2.0.0"
+- lucide-react: "^0.294.0"
+- date-fns: "^3.0.6"
+- zod: "^3.22.4"
+
+Dev dependencies:
+- typescript: "^5"
+- @types/node: "^20"
+- @types/react: "^18"
+- @types/react-dom: "^18"
+- tailwindcss: "^3.3.0"
+- autoprefixer: "^10.4.16"
+- postcss: "^8.4.31"
+- prisma: "^5.7.1"
+- eslint: "^8"
+- eslint-config-next: "14.0.4"
+
+DO NOT use any @radix-ui packages or other experimental packages.
+
 Generate ONLY these files:
-1. package.json - with all necessary dependencies including @prisma/client and prisma, and scripts for db:generate, db:push, db:studio
+1. package.json - with the exact dependencies listed above
 2. next.config.js - Next.js configuration
 3. tsconfig.json - TypeScript configuration
 4. tailwind.config.js - TailwindCSS configuration
@@ -232,6 +257,12 @@ Use file="path" syntax for each code block.
     const globalsCssFile = mergedFiles.find(f => f.path === 'app/globals.css')
     if (globalsCssFile) {
       globalsCssFile.content = fixCSSVariables(globalsCssFile.content)
+    }
+
+    // Fix package.json to ensure reliable dependencies
+    const packageJsonFile = mergedFiles.find(f => f.path === 'package.json')
+    if (packageJsonFile) {
+      packageJsonFile.content = fixPackageJson(packageJsonFile.content)
     }
 
     // Add fallback files for missing essential files
@@ -820,12 +851,15 @@ export function cn(...inputs: ClassValue[]) {
     "setup": "node scripts/setup.js"
   },
   "dependencies": {
-    "next": "14.0.0",
+    "next": "14.0.4",
     "react": "18.2.0",
     "react-dom": "18.2.0",
     "@prisma/client": "^5.7.1",
     "clsx": "^2.0.0",
-    "tailwind-merge": "^2.0.0"
+    "tailwind-merge": "^2.0.0",
+    "lucide-react": "^0.294.0",
+    "date-fns": "^3.0.6",
+    "zod": "^3.22.4"
   },
   "devDependencies": {
     "typescript": "^5",
@@ -835,10 +869,9 @@ export function cn(...inputs: ClassValue[]) {
     "tailwindcss": "^3.3.0",
     "autoprefixer": "^10.4.16",
     "postcss": "^8.4.31",
-    "postcss-loader": "^7.3.3",
     "prisma": "^5.7.1",
     "eslint": "^8",
-    "eslint-config-next": "14.0.0"
+    "eslint-config-next": "14.0.4"
   }
 }`,
     },
@@ -1241,6 +1274,107 @@ function fixCSSVariables(cssContent: string): string {
   }
 
   return cssContent
+}
+
+function fixPackageJson(packageJsonContent: string): string {
+  try {
+    const packageJson = JSON.parse(packageJsonContent)
+    
+    // Ensure reliable dependencies
+    packageJson.dependencies = {
+      "next": "14.0.4",
+      "react": "18.2.0",
+      "react-dom": "18.2.0",
+      "@prisma/client": "^5.7.1",
+      "clsx": "^2.0.0",
+      "tailwind-merge": "^2.0.0",
+      "lucide-react": "^0.294.0",
+      "date-fns": "^3.0.6",
+      "zod": "^3.22.4",
+      ...packageJson.dependencies
+    }
+    
+    // Remove problematic packages
+    delete packageJson.dependencies['@radix-ui/react-badge']
+    delete packageJson.dependencies['@radix-ui/react-select']
+    delete packageJson.dependencies['@radix-ui/react-toast']
+    delete packageJson.dependencies['class-variance-authority']
+    delete packageJson.dependencies['tailwindcss-animate']
+    
+    // Ensure reliable dev dependencies
+    packageJson.devDependencies = {
+      "typescript": "^5",
+      "@types/node": "^20",
+      "@types/react": "^18",
+      "@types/react-dom": "^18",
+      "tailwindcss": "^3.3.0",
+      "autoprefixer": "^10.4.16",
+      "postcss": "^8.4.31",
+      "prisma": "^5.7.1",
+      "eslint": "^8",
+      "eslint-config-next": "14.0.4",
+      ...packageJson.devDependencies
+    }
+    
+    // Remove problematic dev packages
+    delete packageJson.devDependencies['postcss-loader']
+    
+    // Ensure scripts are present
+    packageJson.scripts = {
+      "dev": "next dev",
+      "build": "next build",
+      "start": "next start",
+      "lint": "next lint",
+      "db:generate": "prisma generate",
+      "db:push": "prisma db push",
+      "db:studio": "prisma studio",
+      "setup": "node scripts/setup.js",
+      ...packageJson.scripts
+    }
+    
+    return JSON.stringify(packageJson, null, 2)
+  } catch (error) {
+    console.error("Error fixing package.json:", error)
+    // Return a safe fallback package.json
+    return `{
+  "name": "generated-fullstack-app",
+  "version": "0.1.0",
+  "private": true,
+  "scripts": {
+    "dev": "next dev",
+    "build": "next build",
+    "start": "next start",
+    "lint": "next lint",
+    "db:generate": "prisma generate",
+    "db:push": "prisma db push",
+    "db:studio": "prisma studio",
+    "setup": "node scripts/setup.js"
+  },
+  "dependencies": {
+    "next": "14.0.4",
+    "react": "18.2.0",
+    "react-dom": "18.2.0",
+    "@prisma/client": "^5.7.1",
+    "clsx": "^2.0.0",
+    "tailwind-merge": "^2.0.0",
+    "lucide-react": "^0.294.0",
+    "date-fns": "^3.0.6",
+    "zod": "^3.22.4"
+  },
+  "devDependencies": {
+    "typescript": "^5",
+    "@types/node": "^20",
+    "@types/react": "^18",
+    "@types/react-dom": "^18",
+    "tailwindcss": "^3.3.0",
+    "autoprefixer": "^10.4.16",
+    "postcss": "^8.4.31",
+    "prisma": "^5.7.1",
+    "eslint": "^8",
+    "eslint-config-next": "14.0.4"
+  }
+}`
+  }
 }
 
 function createPlaceholderFile(path: string): CodeFile | null {
