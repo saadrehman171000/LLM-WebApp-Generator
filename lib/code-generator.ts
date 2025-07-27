@@ -21,18 +21,21 @@ export async function generateFullStackCode(prompt: string): Promise<GenerationR
     const setupPrompt = `
 Generate the core configuration and setup files for a complete Next.js 14 application based on this request: "${prompt}"
 
+IMPORTANT: Use SQLite3 as the database (not PostgreSQL) for easy setup. The database file should be created automatically.
+
 Generate ONLY these files:
-1. package.json - with all necessary dependencies
+1. package.json - with all necessary dependencies including @prisma/client and prisma, and scripts for db:generate, db:push, db:studio
 2. next.config.js - Next.js configuration
 3. tsconfig.json - TypeScript configuration
 4. tailwind.config.js - TailwindCSS configuration
 5. app/globals.css - Complete CSS setup with variables
 6. lib/utils.ts - Utility functions
 7. lib/types.ts - TypeScript type definitions
-8. prisma/schema.prisma - Database schema (if database is needed)
-9. lib/prisma.ts - Database client (if database is needed)
-10. README.md - Setup instructions and documentation
-11. .env.example - Environment variables template
+8. prisma/schema.prisma - SQLite3 database schema with proper models
+9. lib/prisma.ts - Database client setup
+10. README.md - Simple setup instructions (just npm install, npm run dev)
+11. .env.example - Environment variables template (DATABASE_URL="file:./dev.db")
+12. scripts/setup.js - Database initialization script that runs prisma generate and prisma db push
 
 Use file="path" syntax for each code block. Make sure all files are complete and production-ready.
     `.trim()
@@ -810,12 +813,17 @@ export function cn(...inputs: ClassValue[]) {
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
-    "lint": "next lint"
+    "lint": "next lint",
+    "db:generate": "prisma generate",
+    "db:push": "prisma db push",
+    "db:studio": "prisma studio",
+    "setup": "node scripts/setup.js"
   },
   "dependencies": {
     "next": "14.0.0",
     "react": "18.2.0",
     "react-dom": "18.2.0",
+    "@prisma/client": "^5.7.1",
     "clsx": "^2.0.0",
     "tailwind-merge": "^2.0.0"
   },
@@ -828,6 +836,7 @@ export function cn(...inputs: ClassValue[]) {
     "autoprefixer": "^10.4.16",
     "postcss": "^8.4.31",
     "postcss-loader": "^7.3.3",
+    "prisma": "^5.7.1",
     "eslint": "^8",
     "eslint-config-next": "14.0.0"
   }
@@ -953,6 +962,146 @@ module.exports = nextConfig`,
     autoprefixer: {},
   },
 }`,
+    },
+    {
+      path: "prisma/schema.prisma",
+      content: `// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+model Task {
+  id          String   @id @default(cuid())
+  title       String
+  description String?
+  dueDate     DateTime?
+  priority    Priority @default(MEDIUM)
+  status      Status   @default(PENDING)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@map("tasks")
+}
+
+enum Priority {
+  LOW
+  MEDIUM
+  HIGH
+  URGENT
+}
+
+enum Status {
+  PENDING
+  IN_PROGRESS
+  COMPLETED
+}`,
+    },
+    {
+      path: "lib/prisma.ts",
+      content: `import { PrismaClient } from '@prisma/client'
+
+const globalForPrisma = globalThis as unknown as {
+  prisma: PrismaClient | undefined
+}
+
+export const prisma = globalForPrisma.prisma ?? new PrismaClient()
+
+if (process.env.NODE_ENV !== 'production') globalForPrisma.prisma = prisma`,
+    },
+    {
+      path: "scripts/setup.js",
+      content: `const { execSync } = require('child_process');
+const fs = require('fs');
+const path = require('path');
+
+console.log('🚀 Setting up the database...');
+
+try {
+  // Generate Prisma client
+  console.log('📦 Generating Prisma client...');
+  execSync('npx prisma generate', { stdio: 'inherit' });
+  
+  // Push the schema to the database
+  console.log('🗄️  Creating database tables...');
+  execSync('npx prisma db push', { stdio: 'inherit' });
+  
+  console.log('✅ Database setup completed successfully!');
+  console.log('🎉 You can now run: npm run dev');
+} catch (error) {
+  console.error('❌ Database setup failed:', error.message);
+  process.exit(1);
+}`,
+    },
+    {
+      path: ".env.example",
+      content: `# Database
+DATABASE_URL="file:./dev.db"
+
+# Add your other environment variables here
+# API_KEYS, etc.
+`,
+    },
+    {
+      path: "README.md",
+      content: `# Generated Full-Stack Application
+
+This is a complete Next.js 14 application generated with AI assistance.
+
+## 🚀 Quick Start
+
+1. **Install dependencies:**
+   \`\`\`bash
+   npm install
+   \`\`\`
+
+2. **Set up the database:**
+   \`\`\`bash
+   npm run setup
+   \`\`\`
+
+3. **Start the development server:**
+   \`\`\`bash
+   npm run dev
+   \`\`\`
+
+4. **Open your browser:**
+   Navigate to [http://localhost:3000](http://localhost:3000)
+
+## 📁 Project Structure
+
+- \`app/\` - Next.js App Router pages and API routes
+- \`components/\` - Reusable React components
+- \`lib/\` - Utility functions and database client
+- \`prisma/\` - Database schema and migrations
+
+## 🛠️ Available Scripts
+
+- \`npm run dev\` - Start development server
+- \`npm run build\` - Build for production
+- \`npm run start\` - Start production server
+- \`npm run setup\` - Set up database
+- \`npm run db:studio\` - Open Prisma Studio
+
+## 🗄️ Database
+
+This application uses SQLite3 with Prisma ORM. The database file (\`dev.db\`) is created automatically when you run \`npm run setup\`.
+
+## 🚀 Deployment
+
+This application is ready to deploy on Vercel or any other platform that supports Next.js.
+
+## 📝 Generated Based On
+
+This application was generated based on the following request:
+"${prompt}"
+`,
     },
   ]
 
