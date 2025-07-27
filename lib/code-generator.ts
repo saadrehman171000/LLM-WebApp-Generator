@@ -91,6 +91,8 @@ Use file="path" syntax for each code block. Make sure all files are complete and
     const pagesPrompt = `
 Based on this request: "${prompt}", generate the main application pages.
 
+CRITICAL: Generate COMPLETE, WORKING code with no syntax errors. Each file must be a complete, valid TypeScript/React component.
+
 Generate ONLY these files:
 1. app/layout.tsx - Root layout with proper metadata and navigation
 2. app/page.tsx - Main page with the core functionality
@@ -98,9 +100,32 @@ Generate ONLY these files:
 4. app/tasks/[id]/page.tsx - View task details page
 5. app/tasks/[id]/edit/page.tsx - Edit task page
 
-Make sure each page is complete, functional, and implements the exact functionality requested. Include proper error handling, loading states, and responsive design.
+MANDATORY REQUIREMENTS:
+- EVERY .tsx file MUST start with: "import React from 'react'"
+- EVERY .tsx file MUST have: "export default function ComponentName() {"
+- EVERY .tsx file MUST end with: "}"
+- NO JSX without React import
+- NO incomplete function declarations
+- Use ONLY components that exist (Header, Footer, TaskCard, TaskForm, etc.)
+- Include proper error handling and loading states
+- Make sure all syntax is valid TypeScript/React
 
-Use file="path" syntax for each code block.
+EXAMPLE STRUCTURE (MANDATORY):
+\`\`\`tsx
+import React from 'react'
+
+export default function PageName() {
+  return (
+    <div>
+      {/* Your JSX content */}
+    </div>
+  )
+}
+\`\`\`
+
+CRITICAL: Follow this exact structure for every .tsx file. Do not skip the React import.
+
+Use file="path" syntax for each code block. Make sure all files are complete and production-ready.
     `.trim()
 
     console.log("Step 2: Generating main pages...")
@@ -164,6 +189,8 @@ Use file="path" syntax for each code block.
     const componentsPrompt = `
 Based on this request: "${prompt}", generate the reusable components needed for the application.
 
+CRITICAL: Generate COMPLETE, WORKING components with no syntax errors. Each component must be a complete, valid TypeScript/React component.
+
 Generate ONLY these files:
 1. components/Header.tsx - Navigation header
 2. components/Footer.tsx - Footer component
@@ -173,10 +200,40 @@ Generate ONLY these files:
 6. components/ui/Button.tsx - Reusable button component
 7. components/ui/Input.tsx - Reusable input component
 8. components/ui/Select.tsx - Reusable select component
+9. components/Navigation.tsx - Navigation component (if needed)
+10. components/ui/Toaster.tsx - Toast notification component (if needed)
 
-Make sure each component is complete, reusable, and follows React best practices. Include proper TypeScript types, error handling, and responsive design.
+MANDATORY REQUIREMENTS:
+- EVERY .tsx file MUST start with: "import React from 'react'"
+- EVERY .tsx file MUST have: "export default function ComponentName() {"
+- EVERY .tsx file MUST end with: "}"
+- NO JSX without React import
+- NO incomplete function declarations
+- Use ONLY standard React hooks and patterns
+- Include proper TypeScript types and error handling
+- Make sure all syntax is valid TypeScript/React
+- Components should be self-contained and reusable
 
-Use file="path" syntax for each code block.
+EXAMPLE STRUCTURE (MANDATORY):
+\`\`\`tsx
+import React from 'react'
+
+interface ComponentProps {
+  // Your props here
+}
+
+export default function ComponentName({ prop1, prop2 }: ComponentProps) {
+  return (
+    <div>
+      {/* Your JSX content */}
+    </div>
+  )
+}
+\`\`\`
+
+CRITICAL: Follow this exact structure for every .tsx file. Do not skip the React import.
+
+Use file="path" syntax for each code block. Make sure all components are complete and production-ready.
     `.trim()
 
     console.log("Step 4: Generating components...")
@@ -263,7 +320,86 @@ Use file="path" syntax for each code block.
     const packageJsonFile = mergedFiles.find(f => f.path === 'package.json')
     if (packageJsonFile) {
       packageJsonFile.content = fixPackageJson(packageJsonFile.content)
+      
+      // Double-check that turbopack flag is removed
+      if (packageJsonFile.content.includes('--turbopack')) {
+        console.log('🚨 TURBOPACK FLAG STILL PRESENT - forcing removal')
+        packageJsonFile.content = packageJsonFile.content.replace('--turbopack', '').replace('  --turbopack', '').replace('--turbopack  ', '')
+      }
     }
+
+    // Fix incomplete code files
+    mergedFiles.forEach(file => {
+      if (file.path.endsWith('.tsx') || file.path.endsWith('.ts')) {
+        file.content = fixIncompleteCode(file.content, file.path)
+      }
+    })
+
+    // Final safety check: Replace any .tsx file that still has JSX without proper React setup
+    mergedFiles.forEach(file => {
+      if (file.path.endsWith('.tsx')) {
+        const hasReactImport = file.content.includes('import React') || 
+                              file.content.includes('import { React }') || 
+                              file.content.includes('import * as React')
+        const hasJSX = file.content.includes('<')
+        const hasExportFunction = file.content.includes('export default function')
+        
+        console.log(`🔍 Checking ${file.path}:`, {
+          hasReactImport,
+          hasJSX,
+          hasExportFunction,
+          contentPreview: file.content.substring(0, 100) + '...'
+        })
+        
+        if (hasJSX && (!hasReactImport || !hasExportFunction)) {
+          console.log(`🚨 CRITICAL: Replacing ${file.path} - has JSX but no proper React setup`)
+          file.content = generateSafeFallback(file.path, prompt)
+        }
+      }
+    })
+
+    // Ensure critical files are completely valid
+    const criticalFiles = ['app/page.tsx', 'app/layout.tsx']
+    criticalFiles.forEach(criticalPath => {
+      const file = mergedFiles.find(f => f.path === criticalPath)
+      if (file) {
+        const hasReactImport = file.content.includes('import React') || 
+                              file.content.includes('import { React }') || 
+                              file.content.includes('import * as React')
+        const hasExportFunction = file.content.includes('export default function')
+        const hasJSX = file.content.includes('<')
+        
+        // Check for prompt content that leaked into the code
+        const hasPromptContent = file.content.includes('Every .tsx file MUST') ||
+                                file.content.includes('EVERY .tsx file MUST') ||
+                                file.content.includes('CRITICAL: Follow') ||
+                                file.content.includes('MANDATORY REQUIREMENTS') ||
+                                file.content.includes('EXAMPLE STRUCTURE') ||
+                                file.content.includes('Use file="path" syntax')
+        
+        console.log(`Checking ${criticalPath}:`, {
+          hasReactImport,
+          hasExportFunction,
+          hasJSX,
+          hasPromptContent,
+          contentPreview: file.content.substring(0, 200) + '...'
+        })
+        
+        if (hasPromptContent) {
+          console.log(`🚨 PROMPT CONTENT DETECTED: ${criticalPath} - replacing with safe fallback`)
+          file.content = generateSafeFallback(criticalPath, prompt)
+        } else if (hasJSX && (!hasReactImport || !hasExportFunction)) {
+          console.log(`❌ Replacing problematic ${criticalPath} with safe fallback`)
+          
+          // Use enhanced UI fallback for UI components
+          if (criticalPath.includes('ui/')) {
+            file.content = generateUISafeFallback(criticalPath)
+          } else {
+            file.content = generateSafeFallback(criticalPath, prompt)
+          }
+        }
+      }
+    })
 
     // Add fallback files for missing essential files
     fallbackFiles.forEach(file => {
@@ -296,8 +432,13 @@ Use file="path" syntax for each code block.
 
     console.log("Final merged files:", mergedFiles.map(f => f.path))
 
+    // Final validation: Ensure no problematic files exist
+    const validatedFiles = mergedFiles.map(file => validateAndFixFile(file, prompt))
+    
+    console.log("✅ Generation complete with validation")
+
     return {
-      files: mergedFiles,
+      files: validatedFiles,
       preview: "Complete application generated successfully!",
     }
   } catch (error) {
@@ -1089,20 +1230,54 @@ This is a complete Next.js 14 application generated with AI assistance.
 
 ## 🚀 Quick Start
 
-1. **Install dependencies:**
-   \`\`\`bash
-   npm install
-   \`\`\`
+### Option 1: Using npm
+\`\`\`bash
+# Install dependencies
+npm install
 
-2. **Set up the database:**
-   \`\`\`bash
-   npm run setup
-   \`\`\`
+# If you get network errors, try:
+npm install --legacy-peer-deps
+# or
+npm install --registry https://registry.npmjs.org/
+\`\`\`
 
-3. **Start the development server:**
-   \`\`\`bash
-   npm run dev
-   \`\`\`
+### Option 2: Using Yarn (if npm fails)
+\`\`\`bash
+# Install Yarn globally (if not installed)
+npm install -g yarn
+
+# Install dependencies
+yarn install
+\`\`\`
+
+### Option 3: Network Troubleshooting
+If you get network errors (ECONNRESET), try:
+\`\`\`bash
+# Clear npm cache
+npm cache clean --force
+
+# Set registry explicitly
+npm config set registry https://registry.npmjs.org/
+
+# Try installation again
+npm install
+\`\`\`
+
+## 🗄️ Database Setup
+
+After installing dependencies:
+
+\`\`\`bash
+# Set up the database
+npm run setup
+\`\`\`
+
+## 🚀 Start Development
+
+\`\`\`bash
+# Start the development server
+npm run dev
+\`\`\`
 
 4. **Open your browser:**
    Navigate to [http://localhost:3000](http://localhost:3000)
@@ -1129,6 +1304,21 @@ This application uses SQLite3 with Prisma ORM. The database file (\`dev.db\`) is
 ## 🚀 Deployment
 
 This application is ready to deploy on Vercel or any other platform that supports Next.js.
+
+## 🔧 Troubleshooting
+
+### Network Issues
+If you encounter network errors during installation:
+1. Check your internet connection
+2. Disable VPN if using one
+3. Try using Yarn instead of npm
+4. Clear npm cache: \`npm cache clean --force\`
+
+### Database Issues
+If database setup fails:
+1. Make sure you have Node.js 18+ installed
+2. Run \`npm run db:generate\` first
+3. Then run \`npm run db:push\`
 
 ## 📝 Generated Based On
 
@@ -1177,7 +1367,7 @@ function findMissingImports(v0Files: CodeFile[], processedPaths: Set<string>): C
   })
 
   // Also check for common component patterns that might be missing
-  const commonComponents = ['Hero', 'FeaturedGigs', 'Categories', 'HowItWorks', 'Stats', 'Header', 'Footer', 'Navbar', 'Sidebar']
+  const commonComponents = ['Hero', 'FeaturedGigs', 'Categories', 'HowItWorks', 'Stats', 'Header', 'Footer', 'Navbar', 'Sidebar', 'Navigation', 'Toaster']
   commonComponents.forEach(componentName => {
     const componentPath = `components/${componentName}.tsx`
     if (!processedPaths.has(componentPath) && !seenImports.has(componentPath)) {
@@ -1186,6 +1376,20 @@ function findMissingImports(v0Files: CodeFile[], processedPaths: Set<string>): C
         missingFiles.push(placeholderFile)
         seenImports.add(componentPath)
         console.log(`Created placeholder for common component: ${componentPath}`)
+      }
+    }
+  })
+
+  // Check for UI components that might be missing
+  const uiComponents = ['Button', 'Input', 'Select', 'Toaster']
+  uiComponents.forEach(componentName => {
+    const componentPath = `components/ui/${componentName}.tsx`
+    if (!processedPaths.has(componentPath) && !seenImports.has(componentPath)) {
+      const placeholderFile = createPlaceholderFile(componentPath)
+      if (placeholderFile) {
+        missingFiles.push(placeholderFile)
+        seenImports.add(componentPath)
+        console.log(`Created placeholder for UI component: ${componentPath}`)
       }
     }
   })
@@ -1319,7 +1523,7 @@ function fixPackageJson(packageJsonContent: string): string {
     // Remove problematic dev packages
     delete packageJson.devDependencies['postcss-loader']
     
-    // Ensure scripts are present
+    // Ensure scripts are present and fix turbopack issue
     packageJson.scripts = {
       "dev": "next dev",
       "build": "next build",
@@ -1330,6 +1534,12 @@ function fixPackageJson(packageJsonContent: string): string {
       "db:studio": "prisma studio",
       "setup": "node scripts/setup.js",
       ...packageJson.scripts
+    }
+    
+    // CRITICAL: Remove --turbopack flag from dev script
+    if (packageJson.scripts.dev && packageJson.scripts.dev.includes('--turbopack')) {
+      packageJson.scripts.dev = packageJson.scripts.dev.replace('--turbopack', '').trim()
+      console.log('🔧 Removed --turbopack flag from dev script')
     }
     
     return JSON.stringify(packageJson, null, 2)
@@ -1375,6 +1585,549 @@ function fixPackageJson(packageJsonContent: string): string {
   }
 }`
   }
+}
+
+function fixIncompleteCode(content: string, filePath: string): string {
+  // Fix common syntax issues
+  let fixedContent = content
+
+  // Remove prompt instructions that might have leaked into the code
+  const promptPatterns = [
+    /- Every \.tsx file MUST end with "}/g,
+    /- EVERY \.tsx file MUST start with: "import React from 'react'"/g,
+    /- EVERY \.tsx file MUST have: "export default function ComponentName\(\) {"/g,
+    /- NO JSX without React import/g,
+    /- NO incomplete function declarations/g,
+    /CRITICAL: Follow this exact structure/g,
+    /MANDATORY REQUIREMENTS:/g,
+    /EXAMPLE STRUCTURE \(MANDATORY\):/g,
+    /Use file="path" syntax for each code block/g,
+    /Make sure all files are complete and production-ready/g
+  ]
+  
+  promptPatterns.forEach(pattern => {
+    fixedContent = fixedContent.replace(pattern, '')
+  })
+
+  // Clean up any remaining prompt-like content
+  fixedContent = fixedContent.replace(/^[-\s]*CRITICAL:.*$/gm, '')
+  fixedContent = fixedContent.replace(/^[-\s]*MANDATORY:.*$/gm, '')
+  fixedContent = fixedContent.replace(/^[-\s]*IMPORTANT:.*$/gm, '')
+  fixedContent = fixedContent.replace(/^[-\s]*EXAMPLE:.*$/gm, '')
+
+  // Fix incomplete arrays/objects
+  if (fixedContent.includes('const navigationItems = [') && !fixedContent.includes(']')) {
+    fixedContent = fixedContent.replace(
+      /const navigationItems = \[([^\]]*)$/,
+      'const navigationItems = [$1]'
+    )
+  }
+
+  // Fix missing closing braces
+  const openBraces = (fixedContent.match(/\{/g) || []).length
+  const closeBraces = (fixedContent.match(/\}/g) || []).length
+  if (openBraces > closeBraces) {
+    const missingBraces = openBraces - closeBraces
+    fixedContent += '\n'.repeat(missingBraces) + '}'.repeat(missingBraces)
+  }
+
+  // Fix missing closing parentheses
+  const openParens = (fixedContent.match(/\(/g) || []).length
+  const closeParens = (fixedContent.match(/\)/g) || []).length
+  if (openParens > closeParens) {
+    const missingParens = openParens - closeParens
+    fixedContent += ')'.repeat(missingParens)
+  }
+
+  // Fix missing imports for common components
+  if (filePath.includes('layout.tsx') || filePath.includes('page.tsx')) {
+    if (fixedContent.includes('@/components/navigation') && !fixedContent.includes('import.*Navigation')) {
+      fixedContent = fixedContent.replace(
+        /import.*from.*['"]@\/components\/navigation['"]/,
+        'import { Navigation } from \'@/components/Navigation\''
+      )
+    }
+    
+    if (fixedContent.includes('@/components/ui/toaster') && !fixedContent.includes('import.*Toaster')) {
+      fixedContent = fixedContent.replace(
+        /import.*from.*['"]@\/components\/ui\/toaster['"]/,
+        'import { Toaster } from \'@/components/ui/Toaster\''
+      )
+    }
+  }
+
+  // Fix incomplete React components
+  if (filePath.endsWith('.tsx')) {
+    // ALWAYS ensure React import is present for any JSX content
+    const hasReactImport = fixedContent.includes('import React') || 
+                          fixedContent.includes('import { React }') || 
+                          fixedContent.includes('import * as React')
+    
+    if (fixedContent.includes('<') && !hasReactImport) {
+      console.log(`🔧 Adding React import to ${filePath}`)
+      fixedContent = `import React from 'react'
+
+${fixedContent}`
+    }
+    
+    // If content starts with JSX but no React import, add it
+    if (fixedContent.includes('<') && !fixedContent.includes('import React') && !fixedContent.includes('import {') && !fixedContent.includes('export default')) {
+      fixedContent = `import React from 'react'
+
+export default function ${filePath.split('/').pop()?.replace('.tsx', '').replace('.ts', '') || 'Component'}() {
+  return (
+${fixedContent}
+  )
+}`
+    }
+    
+    // If content has JSX but no function wrapper
+    if (fixedContent.includes('<') && !fixedContent.includes('export default function') && !fixedContent.includes('function') && !fixedContent.includes('const')) {
+      fixedContent = `import React from 'react'
+
+export default function ${filePath.split('/').pop()?.replace('.tsx', '').replace('.ts', '') || 'Component'}() {
+  return (
+${fixedContent}
+  )
+}`
+    }
+    
+    // If content has return statement but no function
+    if (fixedContent.includes('return (') && !fixedContent.includes('export default function') && !fixedContent.includes('function') && !fixedContent.includes('const')) {
+      fixedContent = `import React from 'react'
+
+export default function ${filePath.split('/').pop()?.replace('.tsx', '').replace('.ts', '') || 'Component'}() {
+${fixedContent}
+}`
+    }
+    
+    // If content has export default function but no React import
+    if (fixedContent.includes('export default function') && !fixedContent.includes('import React') && !fixedContent.includes('import { React }')) {
+      fixedContent = `import React from 'react'
+
+${fixedContent}`
+    }
+  }
+
+  // Ensure the file ends properly
+  if (!fixedContent.trim().endsWith('}') && !fixedContent.trim().endsWith(';')) {
+    if (fixedContent.includes('export default function')) {
+      fixedContent += '\n}'
+    }
+  }
+
+  return fixedContent
+}
+
+function generateSafeFallback(filePath: string, prompt: string): string {
+  if (filePath === 'app/page.tsx') {
+    return `import React from 'react'
+import Link from 'next/link'
+
+export default function HomePage() {
+  return (
+    <div className="min-h-screen bg-gray-50">
+      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-12">
+        <div className="space-y-6">
+          {/* Header Section */}
+          <div className="flex justify-between items-center">
+            <h1 className="text-3xl font-bold text-gray-900">Task Dashboard</h1>
+            <Link 
+              href="/tasks/new" 
+              className="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg font-medium transition-colors"
+            >
+              Create New Task
+            </Link>
+          </div>
+
+          {/* Task Statistics */}
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-8">
+            <div className="bg-white p-6 rounded-lg shadow">
+              <h3 className="text-lg font-semibold text-gray-700 mb-2">Total Tasks</h3>
+              <p id="total-tasks" className="text-3xl font-bold text-blue-600">0</p>
+            </div>
+            <div className="bg-white p-6 rounded-lg shadow">
+              <h3 className="text-lg font-semibold text-gray-700 mb-2">In Progress</h3>
+              <p id="in-progress-tasks" className="text-3xl font-bold text-yellow-600">0</p>
+            </div>
+            <div className="bg-white p-6 rounded-lg shadow">
+              <h3 className="text-lg font-semibold text-gray-700 mb-2">Completed</h3>
+              <p id="completed-tasks" className="text-3xl font-bold text-green-600">0</p>
+            </div>
+          </div>
+
+          {/* Recent Tasks */}
+          <div className="bg-white rounded-lg shadow">
+            <div className="px-6 py-4 border-b border-gray-200">
+              <h2 className="text-xl font-semibold text-gray-900">Recent Tasks</h2>
+            </div>
+            <div className="p-6">
+              <p className="text-gray-500 text-center py-8">
+                No tasks yet. Create your first task to get started!
+              </p>
+            </div>
+          </div>
+
+          {/* Application Info */}
+          <div className="bg-blue-50 border border-blue-200 rounded-lg p-6">
+            <h3 className="text-lg font-semibold text-blue-900 mb-2">Application Generated</h3>
+            <p className="text-blue-700 text-sm mb-4">
+              This application was generated based on: "${prompt}"
+            </p>
+            <div className="grid md:grid-cols-2 gap-4 text-sm">
+              <div>
+                <h4 className="font-semibold text-blue-800 mb-1">Frontend Features</h4>
+                <ul className="text-blue-700 space-y-1">
+                  <li>• React components with hooks</li>
+                  <li>• TailwindCSS styling</li>
+                  <li>• Responsive design</li>
+                  <li>• Next.js App Router</li>
+                </ul>
+              </div>
+              <div>
+                <h4 className="font-semibold text-blue-800 mb-1">Backend Features</h4>
+                <ul className="text-blue-700 space-y-1">
+                  <li>• Next.js API routes</li>
+                  <li>• Prisma ORM with SQLite</li>
+                  <li>• TypeScript support</li>
+                  <li>• Database integration</li>
+                </ul>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  )
+}`
+  }
+  
+  if (filePath === 'app/layout.tsx') {
+    return `import React from 'react'
+import './globals.css'
+
+export const metadata = {
+  title: 'Generated Application',
+  description: 'A Next.js application generated with AI assistance',
+}
+
+export default function RootLayout({
+  children,
+}: {
+  children: React.ReactNode
+}) {
+  return (
+    <html lang="en">
+      <body className="antialiased">
+        <header className="bg-white shadow-sm border-b">
+          <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+            <div className="flex justify-between items-center h-16">
+              <h1 className="text-xl font-semibold text-gray-900">
+                Generated App
+              </h1>
+              <nav className="flex space-x-4">
+                <a href="/" className="text-gray-500 hover:text-gray-700 px-3 py-2 rounded-md text-sm font-medium">
+                  Home
+                </a>
+              </nav>
+            </div>
+          </div>
+        </header>
+        <main>
+          {children}
+        </main>
+      </body>
+    </html>
+  )
+}`
+  }
+  
+  return `import React from 'react'
+
+export default function Component() {
+  return (
+    <div>
+      <p>Component placeholder</p>
+    </div>
+  )
+}`
+}
+
+// Enhanced safe fallback for UI components
+function generateUISafeFallback(filePath: string): string {
+  const componentName = filePath.split('/').pop()?.replace('.tsx', '').replace('.ts', '') || 'Component'
+  
+  if (filePath.includes('ui/')) {
+    switch (componentName.toLowerCase()) {
+      case 'button':
+        return `import React from 'react'
+
+interface ButtonProps {
+  children: React.ReactNode
+  onClick?: () => void
+  className?: string
+  disabled?: boolean
+  variant?: 'primary' | 'secondary' | 'outline'
+}
+
+export default function Button({ 
+  children, 
+  onClick, 
+  className = '', 
+  disabled = false,
+  variant = 'primary' 
+}: ButtonProps) {
+  const baseClasses = 'px-4 py-2 rounded-md font-medium transition-colors focus:outline-none focus:ring-2 focus:ring-blue-500'
+  const variantClasses = {
+    primary: 'bg-blue-600 text-white hover:bg-blue-700',
+    secondary: 'bg-gray-600 text-white hover:bg-gray-700',
+    outline: 'border border-gray-300 bg-white text-gray-700 hover:bg-gray-50'
+  }
+  
+  return (
+    <button
+      onClick={onClick}
+      disabled={disabled}
+      className={\`\${baseClasses} \${variantClasses[variant]} \${className}\`}
+    >
+      {children}
+    </button>
+  )
+}`
+        
+      case 'input':
+        return `import React from 'react'
+
+interface InputProps {
+  type?: string
+  placeholder?: string
+  value?: string
+  onChange?: (e: React.ChangeEvent<HTMLInputElement>) => void
+  className?: string
+  disabled?: boolean
+}
+
+export default function Input({ 
+  type = 'text', 
+  placeholder, 
+  value, 
+  onChange, 
+  className = '',
+  disabled = false 
+}: InputProps) {
+  return (
+    <input
+      type={type}
+      placeholder={placeholder}
+      value={value}
+      onChange={onChange}
+      disabled={disabled}
+      className={\`w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent \${className}\`}
+    />
+  )
+}`
+        
+      case 'select':
+        return `import React from 'react'
+
+interface SelectProps {
+  options: Array<{ value: string; label: string }>
+  value?: string
+  onChange?: (e: React.ChangeEvent<HTMLSelectElement>) => void
+  className?: string
+  disabled?: boolean
+}
+
+export default function Select({ 
+  options, 
+  value, 
+  onChange, 
+  className = '',
+  disabled = false 
+}: SelectProps) {
+  return (
+    <select
+      value={value}
+      onChange={onChange}
+      disabled={disabled}
+      className={\`w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent \${className}\`}
+    >
+      {options.map((option) => (
+        <option key={option.value} value={option.value}>
+          {option.label}
+        </option>
+      ))}
+    </select>
+  )
+}`
+        
+      case 'toaster':
+        return `import React from 'react'
+
+interface ToasterProps {
+  message?: string
+  type?: 'success' | 'error' | 'warning' | 'info'
+  visible?: boolean
+  onClose?: () => void
+}
+
+export default function Toaster({ 
+  message = 'Notification', 
+  type = 'info', 
+  visible = false, 
+  onClose 
+}: ToasterProps) {
+  if (!visible) return null
+  
+  const typeClasses = {
+    success: 'bg-green-500 text-white',
+    error: 'bg-red-500 text-white',
+    warning: 'bg-yellow-500 text-white',
+    info: 'bg-blue-500 text-white'
+  }
+  
+  return (
+    <div className={\`fixed top-4 right-4 p-4 rounded-md shadow-lg \${typeClasses[type]}\`}>
+      <div className="flex items-center justify-between">
+        <span>{message}</span>
+        {onClose && (
+          <button
+            onClick={onClose}
+            className="ml-4 text-white hover:text-gray-200"
+          >
+            ×
+          </button>
+        )}
+      </div>
+    </div>
+  )
+}`
+        
+      default:
+        return `import React from 'react'
+
+interface ${componentName}Props {
+  children?: React.ReactNode
+  className?: string
+}
+
+export default function ${componentName}({ children, className = '' }: ${componentName}Props) {
+  return (
+    <div className={\`${componentName.toLowerCase()}-component \${className}\`}>
+      {children || (
+        <div className="p-4 border border-gray-200 rounded-lg bg-gray-50">
+          <h3 className="text-lg font-semibold text-gray-700 mb-2">${componentName}</h3>
+          <p className="text-gray-500">This is a placeholder for the ${componentName} component.</p>
+        </div>
+      )}
+    </div>
+  )
+}`
+    }
+  }
+  
+  return `import React from 'react'
+
+export default function ${componentName}() {
+  return (
+    <div>
+      <p>${componentName} component placeholder</p>
+    </div>
+  )
+}`
+}
+
+// Additional safety function to completely validate a file
+function validateAndFixFile(file: CodeFile, prompt: string): CodeFile {
+  if (file.path.endsWith('.tsx')) {
+    const hasReactImport = file.content.includes('import React') || 
+                          file.content.includes('import { React }') || 
+                          file.content.includes('import * as React')
+    const hasJSX = file.content.includes('<')
+    const hasExportFunction = file.content.includes('export default function')
+    
+    // Check for prompt content that leaked into the code
+    const hasPromptContent = file.content.includes('Every .tsx file MUST') ||
+                            file.content.includes('EVERY .tsx file MUST') ||
+                            file.content.includes('CRITICAL: Follow') ||
+                            file.content.includes('MANDATORY REQUIREMENTS') ||
+                            file.content.includes('EXAMPLE STRUCTURE') ||
+                            file.content.includes('Use file="path" syntax')
+    
+    // CRITICAL: Check for wrong component types in specific files
+    if (file.path === 'app/page.tsx') {
+      const hasWrongComponent = file.content.includes('export default function Header') ||
+                               file.content.includes('function Header') ||
+                               file.content.includes('HeaderProps') ||
+                               file.content.includes('title = "Task Manager"')
+      
+      if (hasWrongComponent) {
+        console.log(`🚨 WRONG COMPONENT DETECTED: ${file.path} contains Header instead of HomePage - replacing with safe fallback`)
+        return {
+          ...file,
+          content: generateSafeFallback(file.path, prompt)
+        }
+      }
+      
+      // Also check for syntax errors like incomplete JSX
+      if (file.content.includes('<h1') && !file.content.includes('</h1>')) {
+        console.log(`🚨 SYNTAX ERROR DETECTED: ${file.path} has incomplete JSX - replacing with safe fallback`)
+        return {
+          ...file,
+          content: generateSafeFallback(file.path, prompt)
+        }
+      }
+    }
+    
+    if (file.path === 'app/layout.tsx') {
+      const hasWrongComponent = file.content.includes('export default function Header') ||
+                               file.content.includes('function Header') ||
+                               file.content.includes('HeaderProps')
+      
+      if (hasWrongComponent) {
+        console.log(`🚨 WRONG COMPONENT DETECTED: ${file.path} contains Header instead of RootLayout - replacing with safe fallback`)
+        return {
+          ...file,
+          content: generateSafeFallback(file.path, prompt)
+        }
+      }
+    }
+    
+    if (hasPromptContent) {
+      console.log(`🚨 PROMPT CONTENT DETECTED: ${file.path} - replacing with safe fallback`)
+      
+      // Use enhanced UI fallback for UI components
+      if (file.path.includes('ui/')) {
+        return {
+          ...file,
+          content: generateUISafeFallback(file.path)
+        }
+      }
+      
+      return {
+        ...file,
+        content: generateSafeFallback(file.path, prompt)
+      }
+    }
+    
+    if (hasJSX && (!hasReactImport || !hasExportFunction)) {
+      console.log(`🛡️  VALIDATION FAILED: ${file.path} - replacing with safe fallback`)
+      
+      // Use enhanced UI fallback for UI components
+      if (file.path.includes('ui/')) {
+        return {
+          ...file,
+          content: generateUISafeFallback(file.path)
+        }
+      }
+      
+      return {
+        ...file,
+        content: generateSafeFallback(file.path, prompt)
+      }
+    }
+  }
+  return file
 }
 
 function createPlaceholderFile(path: string): CodeFile | null {
