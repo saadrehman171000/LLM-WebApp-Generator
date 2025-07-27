@@ -63,9 +63,11 @@ You MUST generate ALL of these files with complete, working code:
 
 CRITICAL: The application MUST implement the exact functionality requested by the user. If they ask for a todo app, create a todo app with add/delete/complete functionality. If they ask for a blog, create a blog with posts/comments. If they ask for an e-commerce site, create an e-commerce site with products/cart/checkout. Do NOT create generic templates.
 
+IMPORTANT: Generate each file with its proper path (e.g., app/page.tsx, app/layout.tsx, etc.) NOT as src/generated-X.tsx. Use the file="path" syntax for each code block.
+
 Generate a complete, production-ready full-stack Next.js application with both frontend pages/components AND API routes in a single project structure.
 
-Please provide each file in a separate code block with the file path specified.
+Please provide each file in a separate code block with the file path specified using file="path" syntax.
     `.trim()
 
     const response = await fetch(V0_API_URL, {
@@ -132,6 +134,10 @@ Please provide each file in a separate code block with the file path specified.
           finalPath = 'lib/types.ts'
         } else if (file.content.includes('export function') && file.content.includes('cn(')) {
           finalPath = 'lib/utils.ts'
+        } else if (file.content.includes('model Task') || file.content.includes('generator client')) {
+          finalPath = 'prisma/schema.prisma'
+        } else if (file.content.includes('PrismaClient') || file.content.includes('@prisma/client')) {
+          finalPath = 'lib/prisma.ts'
         }
       }
       
@@ -145,6 +151,12 @@ Please provide each file in a separate code block with the file path specified.
       mergedFiles.push(file)
       processedPaths.add(file.path)
     })
+
+    // Fix CSS variables in globals.css
+    const globalsCssFile = mergedFiles.find(f => f.path === 'app/globals.css')
+    if (globalsCssFile) {
+      globalsCssFile.content = fixCSSVariables(globalsCssFile.content)
+    }
 
     // Add fallback files for missing essential files
     fallbackFiles.forEach(file => {
@@ -909,7 +921,104 @@ function findMissingImports(v0Files: CodeFile[], processedPaths: Set<string>): C
     }
   })
 
+  // Also check for common component patterns that might be missing
+  const commonComponents = ['Hero', 'FeaturedGigs', 'Categories', 'HowItWorks', 'Stats', 'Header', 'Footer', 'Navbar', 'Sidebar']
+  commonComponents.forEach(componentName => {
+    const componentPath = `components/${componentName}.tsx`
+    if (!processedPaths.has(componentPath) && !seenImports.has(componentPath)) {
+      const placeholderFile = createPlaceholderFile(componentPath)
+      if (placeholderFile) {
+        missingFiles.push(placeholderFile)
+        seenImports.add(componentPath)
+        console.log(`Created placeholder for common component: ${componentPath}`)
+      }
+    }
+  })
+
   return missingFiles
+}
+
+function fixCSSVariables(cssContent: string): string {
+  // Ensure @tailwind directives are present
+  if (!cssContent.includes('@tailwind base')) {
+    cssContent = `@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+` + cssContent
+  }
+
+  // Ensure CSS variables are defined
+  if (!cssContent.includes('--border:')) {
+    const cssVariables = `
+@layer base {
+  :root {
+    --background: 0 0% 100%;
+    --foreground: 222.2 84% 4.9%;
+    --card: 0 0% 100%;
+    --card-foreground: 222.2 84% 4.9%;
+    --popover: 0 0% 100%;
+    --popover-foreground: 222.2 84% 4.9%;
+    --primary: 221.2 83.2% 53.3%;
+    --primary-foreground: 210 40% 98%;
+    --secondary: 210 40% 96%;
+    --secondary-foreground: 222.2 84% 4.9%;
+    --muted: 210 40% 96%;
+    --muted-foreground: 215.4 16.3% 46.9%;
+    --accent: 210 40% 96%;
+    --accent-foreground: 222.2 84% 4.9%;
+    --destructive: 0 84.2% 60.2%;
+    --destructive-foreground: 210 40% 98%;
+    --border: 214.3 31.8% 91.4%;
+    --input: 214.3 31.8% 91.4%;
+    --ring: 221.2 83.2% 53.3%;
+    --radius: 0.5rem;
+  }
+
+  .dark {
+    --background: 222.2 84% 4.9%;
+    --foreground: 210 40% 98%;
+    --card: 222.2 84% 4.9%;
+    --card-foreground: 210 40% 98%;
+    --popover: 222.2 84% 4.9%;
+    --popover-foreground: 210 40% 98%;
+    --primary: 217.2 91.2% 59.8%;
+    --primary-foreground: 222.2 84% 4.9%;
+    --secondary: 217.2 32.6% 17.5%;
+    --secondary-foreground: 210 40% 98%;
+    --muted: 217.2 32.6% 17.5%;
+    --muted-foreground: 215 20.2% 65.1%;
+    --accent: 217.2 32.6% 17.5%;
+    --accent-foreground: 210 40% 98%;
+    --destructive: 0 62.8% 30.6%;
+    --destructive-foreground: 210 40% 98%;
+    --border: 217.2 32.6% 17.5%;
+    --input: 217.2 32.6% 17.5%;
+    --ring: 224.3 76.3% 94.1%;
+  }
+}
+
+@layer base {
+  * {
+    @apply border-border;
+  }
+  body {
+    @apply bg-background text-foreground;
+  }
+}
+`
+    
+    // Insert CSS variables after @tailwind directives
+    const tailwindEndIndex = cssContent.indexOf('@tailwind utilities;')
+    if (tailwindEndIndex !== -1) {
+      const insertIndex = tailwindEndIndex + '@tailwind utilities;'.length
+      cssContent = cssContent.substring(0, insertIndex) + '\n' + cssVariables + cssContent.substring(insertIndex)
+    } else {
+      cssContent += cssVariables
+    }
+  }
+
+  return cssContent
 }
 
 function createPlaceholderFile(path: string): CodeFile | null {
@@ -917,10 +1026,150 @@ function createPlaceholderFile(path: string): CodeFile | null {
   if (path.includes('components/')) {
     const componentName = path.split('/').pop()?.replace('.tsx', '').replace('.ts', '') || 'Component'
     
-    // Create a more realistic placeholder component
-    return {
-      path,
-      content: `import React from 'react'
+    // Create more realistic placeholder components based on common patterns
+    let componentContent = ''
+    
+    switch (componentName) {
+      case 'Hero':
+        componentContent = `import React from 'react'
+
+export default function Hero() {
+  return (
+    <section className="bg-gradient-to-r from-blue-600 to-purple-600 text-white py-20">
+      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 text-center">
+        <h1 className="text-4xl md:text-6xl font-bold mb-6">
+          Welcome to Our Platform
+        </h1>
+        <p className="text-xl md:text-2xl mb-8 max-w-3xl mx-auto">
+          Discover amazing services and connect with talented professionals
+        </p>
+        <button className="bg-white text-blue-600 px-8 py-3 rounded-lg font-semibold hover:bg-gray-100 transition-colors">
+          Get Started
+        </button>
+      </div>
+    </section>
+  )
+}`
+        break
+        
+      case 'FeaturedGigs':
+        componentContent = `import React from 'react'
+
+export default function FeaturedGigs() {
+  const gigs = [
+    { id: 1, title: 'Web Development', price: '$500', rating: 4.8 },
+    { id: 2, title: 'Logo Design', price: '$200', rating: 4.9 },
+    { id: 3, title: 'Content Writing', price: '$150', rating: 4.7 },
+  ]
+
+  return (
+    <section className="py-16 bg-gray-50">
+      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+        <h2 className="text-3xl font-bold text-center mb-12">Featured Services</h2>
+        <div className="grid md:grid-cols-3 gap-8">
+          {gigs.map((gig) => (
+            <div key={gig.id} className="bg-white rounded-lg shadow-md p-6">
+              <h3 className="text-xl font-semibold mb-2">{gig.title}</h3>
+              <p className="text-gray-600 mb-4">Starting at {gig.price}</p>
+              <div className="flex items-center">
+                <span className="text-yellow-400">★</span>
+                <span className="ml-1 text-sm text-gray-600">{gig.rating}</span>
+              </div>
+            </div>
+          ))}
+        </div>
+      </div>
+    </section>
+  )
+}`
+        break
+        
+      case 'Categories':
+        componentContent = `import React from 'react'
+
+export default function Categories() {
+  const categories = [
+    'Web Development', 'Design', 'Writing', 'Marketing', 'Video', 'Music'
+  ]
+
+  return (
+    <section className="py-16">
+      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+        <h2 className="text-3xl font-bold text-center mb-12">Browse Categories</h2>
+        <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-4">
+          {categories.map((category) => (
+            <div key={category} className="bg-white border border-gray-200 rounded-lg p-4 text-center hover:shadow-md transition-shadow cursor-pointer">
+              <h3 className="font-semibold text-gray-800">{category}</h3>
+            </div>
+          ))}
+        </div>
+      </div>
+    </section>
+  )
+}`
+        break
+        
+      case 'HowItWorks':
+        componentContent = `import React from 'react'
+
+export default function HowItWorks() {
+  const steps = [
+    { step: 1, title: 'Choose a Service', description: 'Browse our categories and find the perfect service for your needs' },
+    { step: 2, title: 'Connect with Professionals', description: 'Message and collaborate with talented professionals' },
+    { step: 3, title: 'Get Your Project Done', description: 'Receive high-quality work and complete your project successfully' },
+  ]
+
+  return (
+    <section className="py-16 bg-gray-50">
+      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+        <h2 className="text-3xl font-bold text-center mb-12">How It Works</h2>
+        <div className="grid md:grid-cols-3 gap-8">
+          {steps.map((step) => (
+            <div key={step.step} className="text-center">
+              <div className="w-16 h-16 bg-blue-600 text-white rounded-full flex items-center justify-center text-2xl font-bold mx-auto mb-4">
+                {step.step}
+              </div>
+              <h3 className="text-xl font-semibold mb-2">{step.title}</h3>
+              <p className="text-gray-600">{step.description}</p>
+            </div>
+          ))}
+        </div>
+      </div>
+    </section>
+  )
+}`
+        break
+        
+      case 'Stats':
+        componentContent = `import React from 'react'
+
+export default function Stats() {
+  const stats = [
+    { number: '10K+', label: 'Happy Clients' },
+    { number: '50K+', label: 'Projects Completed' },
+    { number: '95%', label: 'Satisfaction Rate' },
+    { number: '24/7', label: 'Support Available' },
+  ]
+
+  return (
+    <section className="py-16 bg-blue-600 text-white">
+      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+        <div className="grid grid-cols-2 md:grid-cols-4 gap-8 text-center">
+          {stats.map((stat, index) => (
+            <div key={index}>
+              <div className="text-3xl md:text-4xl font-bold mb-2">{stat.number}</div>
+              <div className="text-blue-100">{stat.label}</div>
+            </div>
+          ))}
+        </div>
+      </div>
+    </section>
+  )
+}`
+        break
+        
+      default:
+        componentContent = `import React from 'react'
 
 interface ${componentName}Props {
   children?: React.ReactNode
@@ -939,6 +1188,11 @@ export default function ${componentName}({ children, className = '' }: ${compone
     </div>
   )
 }`
+    }
+    
+    return {
+      path,
+      content: componentContent
     }
   }
   
