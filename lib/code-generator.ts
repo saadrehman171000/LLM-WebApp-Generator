@@ -1,0 +1,1010 @@
+interface CodeFile {
+  path: string
+  content: string
+}
+
+interface GenerationResult {
+  files: CodeFile[]
+  preview?: string
+}
+
+const V0_API_KEY = process.env.V0_API_KEY
+const V0_API_URL = "https://api.v0.dev/v1/chat/completions"
+
+export async function generateFullStackCode(prompt: string): Promise<GenerationResult> {
+  if (!V0_API_KEY) {
+    throw new Error("V0_API_KEY environment variable is not set. Please add it to your .env file.")
+  }
+
+  try {
+    // Enhanced prompt for full-stack Next.js generation
+    const enhancedPrompt = `
+CRITICAL INSTRUCTIONS: Generate a COMPLETE, PRODUCTION-READY full-stack Next.js 14 application that EXACTLY matches the user's request.
+
+USER REQUEST: ${prompt}
+
+REQUIREMENTS:
+- Create a COMPLETE, WORKING application that does EXACTLY what the user asked for
+- Do NOT create generic templates or placeholder content
+- Implement ALL the functionality described in the user's request
+- Make it production-ready and fully functional
+- Include proper error handling, loading states, and user interactions
+- Use modern React patterns and hooks
+- Implement responsive design
+- Add proper TypeScript types
+
+Technical specifications:
+- Single Next.js 14 project with App Router
+- TypeScript for type safety
+- TailwindCSS for styling
+- Frontend pages and components in app/ directory
+- API routes in app/api/ directory for backend functionality
+- Responsive design (mobile-first)
+- Modern UI components with proper styling
+- Proper error handling and loading states
+- Server Actions for form handling
+- Database integration (if needed)
+- Authentication (if needed)
+- Accessibility best practices
+
+FILE STRUCTURE REQUIREMENTS:
+You MUST generate ALL of these files with complete, working code:
+
+1. app/page.tsx - Main application page with the core functionality
+2. app/layout.tsx - Root layout with proper metadata and structure
+3. app/globals.css - Complete TailwindCSS setup with custom variables
+4. package.json - All necessary dependencies with correct versions
+5. tailwind.config.js - Complete TailwindCSS configuration
+6. tsconfig.json - TypeScript configuration
+7. next.config.js - Next.js configuration
+8. app/api/*/route.ts - API endpoints for the requested functionality
+9. components/*.tsx - Reusable components (Header, Footer, etc.)
+10. lib/*.ts - Utility functions and configurations
+
+CRITICAL: The application MUST implement the exact functionality requested by the user. If they ask for a todo app, create a todo app with add/delete/complete functionality. If they ask for a blog, create a blog with posts/comments. If they ask for an e-commerce site, create an e-commerce site with products/cart/checkout. Do NOT create generic templates.
+
+Generate a complete, production-ready full-stack Next.js application with both frontend pages/components AND API routes in a single project structure.
+
+Please provide each file in a separate code block with the file path specified.
+    `.trim()
+
+    const response = await fetch(V0_API_URL, {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${V0_API_KEY}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        model: "v0-1.5-md",
+        messages: [
+          {
+            role: "user",
+            content: enhancedPrompt,
+          },
+        ],
+      }),
+    })
+
+    if (!response.ok) {
+      const errorText = await response.text()
+      throw new Error(`V0 API error: ${response.status} - ${errorText}`)
+    }
+
+    const data = await response.json()
+
+    // Debug: Log the V0 API response
+    console.log("V0 API Response:", JSON.stringify(data, null, 2))
+
+    // Parse the response and extract files
+    const v0Files = parseV0Response(data)
+    
+    console.log("Parsed V0 files:", v0Files.map(f => f.path))
+    
+    // Get fallback files to ensure complete project structure
+    const fallbackResult = generateFallbackFullStack(prompt)
+    const fallbackFiles = fallbackResult.files
+
+    console.log("Fallback files:", fallbackFiles.map(f => f.path))
+
+    // Merge V0 files with fallback files, prioritizing V0 files
+    const mergedFiles: CodeFile[] = []
+    const processedPaths = new Set<string>()
+
+    // Add V0 files first
+    v0Files.forEach(file => {
+      // Rename generated files to proper paths
+      let finalPath = file.path
+      if (file.path.startsWith('src/generated-')) {
+        // Check if this looks like a page component
+        if (file.content.includes('export default function') && file.content.includes('return (')) {
+          finalPath = 'app/page.tsx'
+        } else if (file.content.includes('export default function RootLayout')) {
+          finalPath = 'app/layout.tsx'
+        } else if (file.content.includes('@tailwind')) {
+          finalPath = 'app/globals.css'
+        } else if (file.content.includes('"name":') && file.content.includes('"dependencies":')) {
+          finalPath = 'package.json'
+        } else if (file.content.includes('module.exports') && file.content.includes('tailwindcss')) {
+          finalPath = 'tailwind.config.js'
+        } else if (file.content.includes('"compilerOptions"')) {
+          finalPath = 'tsconfig.json'
+        } else if (file.content.includes('interface') || file.content.includes('export interface')) {
+          finalPath = 'lib/types.ts'
+        } else if (file.content.includes('export function') && file.content.includes('cn(')) {
+          finalPath = 'lib/utils.ts'
+        }
+      }
+      
+      mergedFiles.push({ ...file, path: finalPath })
+      processedPaths.add(finalPath)
+    })
+
+    // Check for missing imports and create placeholder files
+    const missingFiles = findMissingImports(v0Files, processedPaths)
+    missingFiles.forEach(file => {
+      mergedFiles.push(file)
+      processedPaths.add(file.path)
+    })
+
+    // Add fallback files for missing essential files
+    fallbackFiles.forEach(file => {
+      if (!processedPaths.has(file.path)) {
+        mergedFiles.push(file)
+        processedPaths.add(file.path)
+      }
+    })
+
+    // Ensure we have all essential files
+    const essentialFiles = [
+      'app/page.tsx',
+      'app/layout.tsx', 
+      'app/globals.css',
+      'package.json',
+      'tailwind.config.js',
+      'tsconfig.json',
+      'next.config.js'
+    ]
+
+    essentialFiles.forEach(essentialPath => {
+      if (!processedPaths.has(essentialPath)) {
+        const fallbackFile = fallbackFiles.find(f => f.path === essentialPath)
+        if (fallbackFile) {
+          mergedFiles.push(fallbackFile)
+          processedPaths.add(essentialPath)
+        }
+      }
+    })
+
+    console.log("Final merged files:", mergedFiles.map(f => f.path))
+
+    return {
+      files: mergedFiles,
+      preview: data.choices?.[0]?.message?.content || null,
+    }
+  } catch (error) {
+    console.error("Full-stack generation error:", error)
+
+    // Fallback: Generate basic Next.js full-stack structure
+    return generateFallbackFullStack(prompt)
+  }
+}
+
+function parseV0Response(data: unknown): CodeFile[] {
+  const files: CodeFile[] = []
+
+  try {
+    // Handle OpenAI Chat Completions format
+    const dataObj = data as { choices?: Array<{ message?: { content?: string } }> }
+    const content = dataObj.choices?.[0]?.message?.content || ""
+
+    if (!content) {
+      return []
+    }
+
+    // Try multiple parsing strategies
+    
+    // Strategy 1: Look for code blocks with file paths
+    const codeBlockRegex = /```(\w+)?\s*(?:file="([^"]+)")?\s*\n([\s\S]*?)\n```/g
+    let match
+
+    while ((match = codeBlockRegex.exec(content)) !== null) {
+      const [, language, filePath, code] = match
+
+      if (code && code.trim()) {
+        const path = filePath || `src/generated-${files.length + 1}.${getExtensionFromLanguage(language || "tsx")}`
+        files.push({
+          path,
+          content: code.trim(),
+        })
+      }
+    }
+
+    // Strategy 2: Look for file paths in the content (without code blocks)
+    if (files.length === 0) {
+      const filePathRegex = /(?:file|path):\s*([^\n]+\.(?:tsx?|jsx?|json|css|md|yml|yaml|env|gitignore))/gi
+      const fileMatches = content.match(filePathRegex)
+      
+      if (fileMatches) {
+        // Extract file paths and try to find corresponding content
+        for (const fileMatch of fileMatches) {
+          const filePath = fileMatch.replace(/(?:file|path):\s*/i, '').trim()
+          // Look for content after the file path
+          const contentAfterPath = content.substring(content.indexOf(fileMatch) + fileMatch.length)
+          const nextFileMatch = contentAfterPath.match(/(?:file|path):\s*[^\n]+\.(?:tsx?|jsx?|json|css|md|yml|yaml|env|gitignore)/i)
+          
+          let fileContent = contentAfterPath
+          if (nextFileMatch) {
+            fileContent = contentAfterPath.substring(0, contentAfterPath.indexOf(nextFileMatch[0]))
+          }
+          
+          // Clean up the content
+          fileContent = fileContent.trim()
+          if (fileContent && !fileContent.startsWith('```')) {
+            files.push({
+              path: filePath,
+              content: fileContent,
+            })
+          }
+        }
+      }
+    }
+
+    // Strategy 3: Look for common file patterns in the content
+    if (files.length === 0) {
+      const commonFiles = [
+        { path: 'app/page.tsx', patterns: ['export default function', 'function Home', 'return (', 'export default function Home'] },
+        { path: 'app/layout.tsx', patterns: ['export default function RootLayout', 'export const metadata'] },
+        { path: 'app/globals.css', patterns: ['@tailwind', '@layer'] },
+        { path: 'package.json', patterns: ['"name":', '"dependencies":', '"scripts":'] },
+        { path: 'tailwind.config.js', patterns: ['module.exports', 'tailwindcss', 'content:'] },
+        { path: 'tsconfig.json', patterns: ['"compilerOptions"', '"include"', '"exclude"'] },
+      ]
+
+      for (const file of commonFiles) {
+        const hasPatterns = file.patterns.some(pattern => content.includes(pattern))
+        if (hasPatterns) {
+          // Extract content around these patterns
+          const patternIndex = file.patterns.findIndex(pattern => content.includes(pattern))
+          if (patternIndex !== -1) {
+            const startIndex = content.indexOf(file.patterns[patternIndex])
+            const endIndex = content.indexOf('\n\n', startIndex)
+            const fileContent = endIndex !== -1 ? content.substring(startIndex, endIndex) : content.substring(startIndex)
+            
+            files.push({
+              path: file.path,
+              content: fileContent.trim(),
+            })
+          }
+        }
+      }
+    }
+
+    // Strategy 4: Look for the main page component specifically
+    if (!files.find(f => f.path === 'app/page.tsx')) {
+      // Try to find the main page component in the content
+      const pagePatterns = [
+        /export default function \w+\([^)]*\)\s*{[\s\S]*?}/,
+        /function \w+\([^)]*\)\s*{[\s\S]*?return \([\s\S]*?\)[\s\S]*?}/,
+        /export default function[\s\S]*?return \([\s\S]*?\)[\s\S]*?}/
+      ]
+      
+      for (const pattern of pagePatterns) {
+        const match = content.match(pattern)
+        if (match) {
+          files.push({
+            path: 'app/page.tsx',
+            content: match[0].trim(),
+          })
+          break
+        }
+      }
+    }
+
+    // If still no files found, try to parse as single file
+    if (files.length === 0 && content.trim()) {
+      files.push({
+        path: "app/page.tsx",
+        content: content.trim(),
+      })
+    }
+  } catch (error) {
+    console.error("Error parsing v0 response:", error)
+  }
+
+  return files.length > 0 ? files : []
+}
+
+function getExtensionFromLanguage(language: string): string {
+  const extensionMap: Record<string, string> = {
+    typescript: "ts",
+    tsx: "tsx",
+    javascript: "js",
+    jsx: "jsx",
+    json: "json",
+    css: "css",
+    html: "html",
+    markdown: "md",
+    yaml: "yml",
+    bash: "sh",
+  }
+  return extensionMap[language.toLowerCase()] || "txt"
+}
+
+function generateFallbackFullStack(prompt: string): GenerationResult {
+  // Create a more generic fallback that adapts to the user's request
+  const files: CodeFile[] = [
+    {
+      path: "app/page.tsx",
+      content: `'use client'
+
+import { useState, useEffect } from 'react'
+
+export default function Home() {
+  const [data, setData] = useState(null)
+  const [loading, setLoading] = useState(false)
+  
+  const fetchData = async () => {
+    setLoading(true)
+    try {
+      const response = await fetch('/api/data')
+      const result = await response.json()
+      setData(result)
+    } catch (error) {
+      console.error('Error fetching data:', error)
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  useEffect(() => {
+    fetchData()
+  }, [])
+  
+  return (
+    <div className="min-h-screen bg-gradient-to-br from-blue-50 to-indigo-100 py-12">
+      <div className="max-w-4xl mx-auto px-4">
+        <h1 className="text-4xl font-bold text-center mb-8 text-gray-900">
+          Generated Application
+        </h1>
+        <p className="text-lg text-gray-600 text-center mb-8">
+          Based on your request: "${prompt}"
+        </p>
+        
+        <div className="bg-white rounded-lg shadow-lg p-8 mb-8">
+          <h2 className="text-2xl font-semibold mb-4 text-gray-800">Application Ready</h2>
+          <p className="text-gray-600 mb-6">
+            This is a generated full-stack Next.js application based on your prompt: "${prompt}".
+            The V0 API should have generated specific functionality for your request.
+          </p>
+          
+          <div className="space-y-4">
+            <button
+              onClick={fetchData}
+              disabled={loading}
+              className="bg-blue-600 hover:bg-blue-700 disabled:opacity-50 text-white px-6 py-2 rounded-lg transition-colors"
+            >
+              {loading ? 'Loading...' : 'Test API Connection'}
+            </button>
+            
+            {data && (
+              <div className="bg-gray-50 p-4 rounded-lg">
+                <h3 className="font-semibold mb-2">API Response:</h3>
+                <pre className="text-sm text-gray-700">
+                  {JSON.stringify(data, null, 2)}
+                </pre>
+              </div>
+            )}
+          </div>
+        </div>
+        
+        <div className="grid md:grid-cols-2 gap-6">
+          <div className="bg-white rounded-lg shadow-md p-6">
+            <h3 className="text-xl font-semibold mb-3 text-gray-800">Frontend Features</h3>
+            <ul className="space-y-2 text-gray-600">
+              <li>• React components with hooks</li>
+              <li>• TailwindCSS styling</li>
+              <li>• Responsive design</li>
+              <li>• Loading states</li>
+            </ul>
+          </div>
+          
+          <div className="bg-white rounded-lg shadow-md p-6">
+            <h3 className="text-xl font-semibold mb-3 text-gray-800">Backend Features</h3>
+            <ul className="space-y-2 text-gray-600">
+              <li>• Next.js API routes</li>
+              <li>• RESTful endpoints</li>
+              <li>• Error handling</li>
+              <li>• TypeScript support</li>
+            </ul>
+          </div>
+        </div>
+        
+        <div className="mt-8 bg-yellow-50 border border-yellow-200 rounded-lg p-6">
+          <h3 className="text-lg font-semibold text-yellow-800 mb-2">Next Steps</h3>
+          <p className="text-yellow-700 mb-4">
+            To get the best results, try being more specific in your prompt. For example:
+          </p>
+          <ul className="text-yellow-700 space-y-1 text-sm">
+            <li>• "Create a todo app with add, delete, and mark as complete functionality"</li>
+            <li>• "Build a blog with posts, comments, and user authentication"</li>
+            <li>• "Make an e-commerce site with product catalog, shopping cart, and checkout"</li>
+            <li>• "Design a dashboard with charts, user management, and real-time updates"</li>
+          </ul>
+        </div>
+      </div>
+    </div>
+  )
+}`,
+    },
+    {
+      path: "app/layout.tsx",
+      content: `import './globals.css'
+import type { Metadata } from 'next'
+
+export const metadata: Metadata = {
+  title: 'Generated Full-Stack App',
+  description: 'AI Generated Next.js Full-Stack Application',
+}
+
+export default function RootLayout({
+  children,
+}: {
+  children: React.ReactNode
+}) {
+  return (
+    <html lang="en">
+      <body className="antialiased">{children}</body>
+    </html>
+  )
+}`,
+    },
+    {
+      path: "app/globals.css",
+      content: `@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  :root {
+    --background: 0 0% 100%;
+    --foreground: 222.2 84% 4.9%;
+    --card: 0 0% 100%;
+    --card-foreground: 222.2 84% 4.9%;
+    --popover: 0 0% 100%;
+    --popover-foreground: 222.2 84% 4.9%;
+    --primary: 221.2 83.2% 53.3%;
+    --primary-foreground: 210 40% 98%;
+    --secondary: 210 40% 96%;
+    --secondary-foreground: 222.2 84% 4.9%;
+    --muted: 210 40% 96%;
+    --muted-foreground: 215.4 16.3% 46.9%;
+    --accent: 210 40% 96%;
+    --accent-foreground: 222.2 84% 4.9%;
+    --destructive: 0 84.2% 60.2%;
+    --destructive-foreground: 210 40% 98%;
+    --border: 214.3 31.8% 91.4%;
+    --input: 214.3 31.8% 91.4%;
+    --ring: 221.2 83.2% 53.3%;
+    --radius: 0.5rem;
+  }
+
+  .dark {
+    --background: 222.2 84% 4.9%;
+    --foreground: 210 40% 98%;
+    --card: 222.2 84% 4.9%;
+    --card-foreground: 210 40% 98%;
+    --popover: 222.2 84% 4.9%;
+    --popover-foreground: 210 40% 98%;
+    --primary: 217.2 91.2% 59.8%;
+    --primary-foreground: 222.2 84% 4.9%;
+    --secondary: 217.2 32.6% 17.5%;
+    --secondary-foreground: 210 40% 98%;
+    --muted: 217.2 32.6% 17.5%;
+    --muted-foreground: 215 20.2% 65.1%;
+    --accent: 217.2 32.6% 17.5%;
+    --accent-foreground: 210 40% 98%;
+    --destructive: 0 62.8% 30.6%;
+    --destructive-foreground: 210 40% 98%;
+    --border: 217.2 32.6% 17.5%;
+    --input: 217.2 32.6% 17.5%;
+    --ring: 224.3 76.3% 94.1%;
+  }
+}
+
+@layer base {
+  * {
+    @apply border-border;
+  }
+  body {
+    @apply bg-background text-foreground;
+  }
+}`,
+    },
+    {
+      path: "app/api/data/route.ts",
+      content: `import { NextResponse } from 'next/server'
+
+export async function GET() {
+  try {
+    // Simulate some data processing
+    const data = {
+      message: 'Hello from the API!',
+      timestamp: new Date().toISOString(),
+      prompt: '${prompt}',
+      features: [
+        'Next.js API Routes',
+        'TypeScript Support',
+        'Error Handling',
+        'JSON Responses'
+      ]
+    }
+
+    return NextResponse.json(data)
+  } catch (error) {
+    return NextResponse.json(
+      { error: 'Internal Server Error' },
+      { status: 500 }
+    )
+  }
+}
+
+export async function POST(request: Request) {
+  try {
+    const body = await request.json()
+    
+    // Process the data
+    const response = {
+      message: 'Data received successfully',
+      receivedData: body,
+      timestamp: new Date().toISOString()
+    }
+
+    return NextResponse.json(response)
+  } catch (error) {
+    return NextResponse.json(
+      { error: 'Invalid JSON data' },
+      { status: 400 }
+    )
+  }
+}`,
+    },
+    {
+      path: "app/api/health/route.ts",
+      content: `import { NextResponse } from 'next/server'
+
+export async function GET() {
+  return NextResponse.json({
+    status: 'OK',
+    message: 'API is running',
+    timestamp: new Date().toISOString()
+  })
+}`,
+    },
+    {
+      path: "components/ui/button.tsx",
+      content: `import { ButtonHTMLAttributes, forwardRef } from 'react'
+import { cn } from '@/lib/utils'
+
+interface ButtonProps extends ButtonHTMLAttributes<HTMLButtonElement> {
+  variant?: 'default' | 'outline' | 'ghost'
+  size?: 'sm' | 'md' | 'lg'
+}
+
+const Button = forwardRef<HTMLButtonElement, ButtonProps>(
+  ({ className, variant = 'default', size = 'md', ...props }, ref) => {
+    const baseClasses = 'inline-flex items-center justify-center rounded-md font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:pointer-events-none disabled:opacity-50'
+    
+    const variants = {
+      default: 'bg-primary text-primary-foreground hover:bg-primary/90',
+      outline: 'border border-input bg-background hover:bg-accent hover:text-accent-foreground',
+      ghost: 'hover:bg-accent hover:text-accent-foreground'
+    }
+    
+    const sizes = {
+      sm: 'h-9 px-3 text-sm',
+      md: 'h-10 px-4 py-2',
+      lg: 'h-11 px-8 text-lg'
+    }
+
+    return (
+      <button
+        className={cn(baseClasses, variants[variant], sizes[size], className)}
+        ref={ref}
+        {...props}
+      />
+    )
+  }
+)
+
+Button.displayName = 'Button'
+
+export { Button }`,
+    },
+    {
+      path: "components/Header.tsx",
+      content: `import React from 'react'
+
+interface HeaderProps {
+  className?: string
+}
+
+export default function Header({ className = '' }: HeaderProps) {
+  return (
+    <header className={\`bg-white shadow-sm border-b \${className}\`}>
+      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+        <div className="flex justify-between items-center h-16">
+          <div className="flex items-center">
+            <h1 className="text-xl font-semibold text-gray-900">
+              Generated App
+            </h1>
+          </div>
+          <nav className="flex space-x-4">
+            <a href="#" className="text-gray-500 hover:text-gray-700 px-3 py-2 rounded-md text-sm font-medium">
+              Home
+            </a>
+            <a href="#" className="text-gray-500 hover:text-gray-700 px-3 py-2 rounded-md text-sm font-medium">
+              About
+            </a>
+            <a href="#" className="text-gray-500 hover:text-gray-700 px-3 py-2 rounded-md text-sm font-medium">
+              Contact
+            </a>
+          </nav>
+        </div>
+      </div>
+    </header>
+  )
+}`,
+    },
+    {
+      path: "components/Footer.tsx",
+      content: `import React from 'react'
+
+interface FooterProps {
+  className?: string
+}
+
+export default function Footer({ className = '' }: FooterProps) {
+  return (
+    <footer className={\`bg-gray-50 border-t \${className}\`}>
+      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-8">
+          <div>
+            <h3 className="text-lg font-semibold text-gray-900 mb-4">
+              Generated App
+            </h3>
+            <p className="text-gray-600">
+              A Next.js application generated with AI assistance.
+            </p>
+          </div>
+          <div>
+            <h4 className="text-md font-semibold text-gray-900 mb-4">
+              Quick Links
+            </h4>
+            <ul className="space-y-2">
+              <li><a href="#" className="text-gray-600 hover:text-gray-900">Home</a></li>
+              <li><a href="#" className="text-gray-600 hover:text-gray-900">About</a></li>
+              <li><a href="#" className="text-gray-600 hover:text-gray-900">Contact</a></li>
+            </ul>
+          </div>
+          <div>
+            <h4 className="text-md font-semibold text-gray-900 mb-4">
+              Contact
+            </h4>
+            <p className="text-gray-600">
+              Email: info@example.com<br />
+              Phone: (555) 123-4567
+            </p>
+          </div>
+        </div>
+        <div className="mt-8 pt-8 border-t border-gray-200">
+          <p className="text-center text-gray-500">
+            © 2024 Generated App. All rights reserved.
+          </p>
+        </div>
+      </div>
+    </footer>
+  )
+}`,
+    },
+    {
+      path: "lib/utils.ts",
+      content: `import { type ClassValue, clsx } from 'clsx'
+import { twMerge } from 'tailwind-merge'
+
+export function cn(...inputs: ClassValue[]) {
+  return twMerge(clsx(inputs))
+}`,
+    },
+    {
+      path: "package.json",
+      content: `{
+  "name": "generated-fullstack-app",
+  "version": "0.1.0",
+  "private": true,
+  "scripts": {
+    "dev": "next dev",
+    "build": "next build",
+    "start": "next start",
+    "lint": "next lint"
+  },
+  "dependencies": {
+    "next": "14.0.0",
+    "react": "18.2.0",
+    "react-dom": "18.2.0",
+    "clsx": "^2.0.0",
+    "tailwind-merge": "^2.0.0"
+  },
+  "devDependencies": {
+    "typescript": "^5",
+    "@types/node": "^20",
+    "@types/react": "^18",
+    "@types/react-dom": "^18",
+    "tailwindcss": "^3.3.0",
+    "autoprefixer": "^10.4.16",
+    "postcss": "^8.4.31",
+    "postcss-loader": "^7.3.3",
+    "eslint": "^8",
+    "eslint-config-next": "14.0.0"
+  }
+}`,
+    },
+    {
+      path: "tailwind.config.js",
+      content: `/** @type {import('tailwindcss').Config} */
+module.exports = {
+  content: [
+    './pages/**/*.{js,ts,jsx,tsx,mdx}',
+    './components/**/*.{js,ts,jsx,tsx,mdx}',
+    './app/**/*.{js,ts,jsx,tsx,mdx}',
+  ],
+  theme: {
+    extend: {
+      colors: {
+        border: 'hsl(var(--border))',
+        input: 'hsl(var(--input))',
+        ring: 'hsl(var(--ring))',
+        background: 'hsl(var(--background))',
+        foreground: 'hsl(var(--foreground))',
+        primary: {
+          DEFAULT: 'hsl(var(--primary))',
+          foreground: 'hsl(var(--primary-foreground))',
+        },
+        secondary: {
+          DEFAULT: 'hsl(var(--secondary))',
+          foreground: 'hsl(var(--secondary-foreground))',
+        },
+        destructive: {
+          DEFAULT: 'hsl(var(--destructive))',
+          foreground: 'hsl(var(--destructive-foreground))',
+        },
+        muted: {
+          DEFAULT: 'hsl(var(--muted))',
+          foreground: 'hsl(var(--muted-foreground))',
+        },
+        accent: {
+          DEFAULT: 'hsl(var(--accent))',
+          foreground: 'hsl(var(--accent-foreground))',
+        },
+        popover: {
+          DEFAULT: 'hsl(var(--popover))',
+          foreground: 'hsl(var(--popover-foreground))',
+        },
+        card: {
+          DEFAULT: 'hsl(var(--card))',
+          foreground: 'hsl(var(--card-foreground))',
+        },
+      },
+      borderRadius: {
+        lg: 'var(--radius)',
+        md: 'calc(var(--radius) - 2px)',
+        sm: 'calc(var(--radius) - 4px)',
+      },
+    },
+  },
+  plugins: [],
+}`,
+    },
+    {
+      path: "tsconfig.json",
+      content: `{
+  "compilerOptions": {
+    "lib": ["dom", "dom.iterable", "esnext"],
+    "allowJs": true,
+    "skipLibCheck": true,
+    "strict": true,
+    "noEmit": true,
+    "esModuleInterop": true,
+    "module": "esnext",
+    "moduleResolution": "bundler",
+    "resolveJsonModule": true,
+    "isolatedModules": true,
+    "jsx": "preserve",
+    "incremental": true,
+    "plugins": [
+      {
+        "name": "next"
+      }
+    ],
+    "paths": {
+      "@/*": ["./*"]
+    }
+  },
+  "include": ["next-env.d.ts", "**/*.ts", "**/*.tsx", ".next/types/**/*.ts"],
+  "exclude": ["node_modules"]
+}`,
+    },
+    {
+      path: "next.config.js",
+      content: `/** @type {import('next').NextConfig} */
+const nextConfig = {
+  eslint: {
+    ignoreDuringBuilds: true,
+  },
+  typescript: {
+    ignoreBuildErrors: true,
+  },
+  images: {
+    unoptimized: true,
+  },
+  experimental: {
+    turbo: {
+      rules: {
+        '*.css': {
+          loaders: ['postcss-loader'],
+          as: '*.css',
+        },
+      },
+    },
+  },
+}
+
+module.exports = nextConfig`,
+    },
+    {
+      path: "postcss.config.js",
+      content: `module.exports = {
+  plugins: {
+    tailwindcss: {},
+    autoprefixer: {},
+  },
+}`,
+    },
+  ]
+
+  return { files }
+}
+
+function findMissingImports(v0Files: CodeFile[], processedPaths: Set<string>): CodeFile[] {
+  const missingFiles: CodeFile[] = []
+  const seenImports = new Set<string>()
+
+  v0Files.forEach(file => {
+    const content = file.content
+    const importRegex = /import\s+['"]([^'"]+)['"]/g
+    let match
+
+    while ((match = importRegex.exec(content)) !== null) {
+      const [, importPath] = match
+      
+      // Skip external packages and Next.js imports
+      if (importPath.startsWith('@/') || importPath.startsWith('./') || importPath.startsWith('../')) {
+        let normalizedPath = importPath.replace('@/', '')
+        
+        // Add file extension if missing
+        if (normalizedPath.includes('components/') && !normalizedPath.includes('.')) {
+          normalizedPath += '.tsx'
+        } else if (normalizedPath.includes('lib/') && !normalizedPath.includes('.')) {
+          normalizedPath += '.ts'
+        }
+        
+        if (!processedPaths.has(normalizedPath) && !seenImports.has(normalizedPath)) {
+          const placeholderFile = createPlaceholderFile(normalizedPath)
+          if (placeholderFile) {
+            missingFiles.push(placeholderFile)
+            seenImports.add(normalizedPath)
+            console.log(`Created placeholder for missing import: ${normalizedPath}`)
+          }
+        }
+      }
+    }
+  })
+
+  return missingFiles
+}
+
+function createPlaceholderFile(path: string): CodeFile | null {
+  // Handle different types of missing files
+  if (path.includes('components/')) {
+    const componentName = path.split('/').pop()?.replace('.tsx', '').replace('.ts', '') || 'Component'
+    
+    // Create a more realistic placeholder component
+    return {
+      path,
+      content: `import React from 'react'
+
+interface ${componentName}Props {
+  children?: React.ReactNode
+  className?: string
+}
+
+export default function ${componentName}({ children, className = '' }: ${componentName}Props) {
+  return (
+    <div className={\`${componentName.toLowerCase()}-component \${className}\`}>
+      {children || (
+        <div className="p-4 border border-gray-200 rounded-lg bg-gray-50">
+          <h3 className="text-lg font-semibold text-gray-700 mb-2">${componentName}</h3>
+          <p className="text-gray-500">This is a placeholder for the ${componentName} component.</p>
+        </div>
+      )}
+    </div>
+  )
+}`
+    }
+  }
+  
+  if (path.includes('lib/')) {
+    const libName = path.split('/').pop()?.replace('.ts', '').replace('.js', '') || 'lib'
+    return {
+      path,
+      content: `// Placeholder for ${libName}
+// This is a placeholder file for missing library functionality
+
+export const ${libName} = {
+  // Placeholder implementation
+  placeholder: true,
+  message: 'This is a placeholder for ${libName} functionality'
+}
+
+export default ${libName}`
+    }
+  }
+  
+  if (path.includes('context/') || path.includes('-context')) {
+    const contextName = path.split('/').pop()?.replace('.ts', '').replace('.js', '') || 'Context'
+    return {
+      path,
+      content: `import React, { createContext, useContext, ReactNode } from 'react'
+
+interface ${contextName}ContextType {
+  // Placeholder context type
+  placeholder: boolean
+  message: string
+}
+
+const ${contextName}Context = createContext<${contextName}ContextType | undefined>(undefined)
+
+export function ${contextName}Provider({ children }: { children: ReactNode }) {
+  const value = {
+    placeholder: true,
+    message: 'This is a placeholder context'
+  }
+  
+  return (
+    <${contextName}Context.Provider value={value}>
+      {children}
+    </${contextName}Context.Provider>
+  )
+}
+
+export function use${contextName}() {
+  const context = useContext(${contextName}Context)
+  if (context === undefined) {
+    throw new Error(\`use${contextName} must be used within a ${contextName}Provider\`)
+  }
+  return context
+}`
+    }
+  }
+  
+  return null
+}
+
+// Legacy functions for backward compatibility
+export async function generateFrontendCode(prompt: string): Promise<GenerationResult> {
+  return generateFullStackCode(prompt)
+}
+
+export async function generateBackendCode(): Promise<GenerationResult> {
+  // Return empty since we're now generating everything in one go
+  return { files: [] }
+}
